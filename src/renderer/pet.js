@@ -88,6 +88,7 @@
         this.alt = Math.min(h * 0.55, 420);
         this.vy = 0; this.vx = 0;
         this.mode = 'fall'; this.timers.fall = 0;
+        this.softLanding = true; // his own entrance never hurts
         this.wakeUp(false);
       } else {
         this.x = clamp(this.x, 30, w - 30);
@@ -112,6 +113,7 @@
       this.drag = { gx: this.cursor.x - this.x, gy: this.cursor.y - feetY, sx: this.cursor.x, sy: this.cursor.y, at: performance.now(), moved: false, vx: 0, vy: 0, px: this.x, palt: this.alt, swing: 0 };
       this.prevMode = this.mode;
       this.mode = 'drag'; this.timers.drag = 0;
+      this.softLanding = false;
       if (this.asleep) this.wakeUp(false);
       this.host.setClickable && this.host.setClickable(true);
       this.kick();
@@ -276,8 +278,9 @@
           const impact = -this.vy;
           this.alt = 0; this.vy = 0; this.vx *= 0.25;
           this.mode = 'ground';
-          if (impact > CFG.hurtFloorSpeed * k && T.hurt > 0.5) this.bonk(0);
+          if (impact > CFG.hurtFloorSpeed * k && T.hurt > 0.5 && !this.softLanding) this.bonk(0);
           else if (T.hurt > A.DURATION.hurt) T.land = 0;
+          this.softLanding = false;
         }
         return;
       }
