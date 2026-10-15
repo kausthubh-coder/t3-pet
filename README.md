@@ -1,68 +1,88 @@
 # t3-pet
 
-A desktop pet for [T3 Code](https://github.com/pingdotgg/t3code): a pixel-art T3 mascot that lives on top
-of your screen, follows your cursor and shows what your T3 Code agents are doing. Same idea as Codex Pets.
+A pixel-art T3 mascot that lives on your desktop, follows your cursor and shows what your
+[T3 Code](https://github.com/pingdotgg/t3code) agents are doing. He types on a laptop while an agent works,
+waves when it needs you, and jumps when it's done. You can also pick him up, pet him, and (please don't)
+throw him into the wall.
 
-## Run
+![t3-pet demo](assets/demo.gif)
+
+This is a fan project, not an official T3 Code feature.
+
+## Run it
 
 ```
+git clone https://github.com/kausthubh-coder/t3-pet
+cd t3-pet
 npm install
 npm start
 ```
 
-Electron 44 (pinned), plain JavaScript, no build step. A tray icon has Pause following, Pet it, Go to sleep,
-a State menu and Quit.
+It's an Electron app in plain JavaScript with no build step. Tested on Windows 11. macOS and Linux should
+work but haven't been tried. Quit from the tray icon.
 
-To check the art without Electron, open `preview.html` in a browser. It shows every animation, the speech
-bubbles, frame strips, and a playground that runs the real overlay behaviour inside the page.
+To look at the art without Electron, serve the folder (for example `npx http-server .`) and open
+`preview.html`. It shows every animation and a playground that runs the same pet code as the app.
 
-## What it does
+## What he does
 
-- One transparent, click-through, always-on-top window covers the work area of the display your cursor is
-  on, and moves with the cursor to other monitors.
-- The pet walks, or runs when you're far away, to a spot a short distance from the cursor and stands on
-  the bottom of the screen. After 30 s without cursor movement it sits down and sleeps; moving the cursor
-  wakes it.
-- Hover over the pet and that spot becomes clickable. Click it for hearts, or drag it and let go to watch it
-  fall and land.
-- He can get hurt. Throw him hard into a screen edge, or drop him from high up, and he goes "OW!", sees stars
-  and wears a bandage for 20 s, sulking for the first few. Click him 3 times in quick succession and he cries;
-  5 times knocks him out. A gentle click (a pet) ends the sulk.
+![every animation](assets/animations.png)
 
-## Hotkeys (for filming)
+- He lives in a transparent, click-through window on top of everything, on whichever monitor your cursor
+  is on. Clicks only stop at the pet itself.
+- He walks after your cursor, or runs if it's far away, and stands on the bottom edge of the screen.
+  After 30 seconds without cursor movement he sits down and falls asleep. Moving the mouse wakes him.
+- Click him for hearts. Drag him and let go to drop him.
+- Throw him hard into a screen edge, or drop him from high up, and he goes "OW!", sees stars and wears a
+  bandage for 20 seconds. Three quick clicks make him cry, and five knock him out. A gentle click ends
+  the sulk.
+- The tray menu has Pause following, Pet it, Go to sleep, a state picker and Quit.
 
-| Keys | State |
+## How he knows what your agent is doing
+
+Once a second the app reads T3 Code's local database, `~/.t3/userdata/statev2.sqlite`. It opens the
+file read-only and only runs `SELECT` queries (`src/status/queries.js`), so it can't change anything in
+T3 Code.
+
+| Pet shows | When |
 |---|---|
-| Ctrl+Alt+1 | idle |
-| Ctrl+Alt+2 | working: types on a laptop, bubble with dots |
-| Ctrl+Alt+3 | waiting: hops and waves, bubble "?" |
-| Ctrl+Alt+4 | done: jumps with sparkles (about 6 s, then idle) |
-| Ctrl+Alt+5 | error: sad face and sweat drop (about 6 s, then idle) |
-| Ctrl+Alt+0 | back to the live T3 status |
-
-Forced states use the title of your latest T3 thread as the caption.
-
-## How T3 status is detected
-
-The pet polls `%USERPROFILE%\.t3\userdata\statev2.sqlite` once a second, opening it **read-only** and
-running only `SELECT`s (`src/status/queries.js`):
-
-| State | When |
-|---|---|
-| waiting | a row in `orchestration_v2_projection_runtime_requests` has `status = 'pending'` |
-| error | a run in `orchestration_v2_projection_runs` has `status = 'failed'` and `completed_at` in the last 6 s |
-| done | a run has `status = 'completed'` and `completed_at` in the last 6 s |
-| working | a run has `status = 'running'` |
+| waiting ("?") | a run is still going and has a request waiting on you |
+| error | a run failed in the last 6 seconds |
+| done | a run completed in the last 6 seconds |
+| working | a run is going |
 | idle | none of the above |
 
-The states are checked in that order. Runs on archived or deleted threads are ignored, and so are
-`running` rows more than 6 hours old (left behind by a crash). The thread title from
-`orchestration_v2_projection_threads` is shown in the bubble for a few seconds after a change, and again
-while you hover the pet.
+The checks run in that order. The app ignores runs on archived or deleted threads, and "running" rows
+more than 6 hours old, which a crash can leave behind. The bubble shows the thread title for a few
+seconds after a change, and while you hover the pet.
 
-The DB is read with `node:sqlite` inside Electron. If that module isn't available, the app spawns the system
-`node` to run `src/status/poll-child.js`, which prints one JSON line per second. If the database file
-doesn't exist, the pet runs in demo mode (hotkeys only).
+If Electron can't load `node:sqlite`, the app runs `src/status/poll-child.js` with your system `node`
+instead. If the database doesn't exist, the pet still runs and you can set his mood with the hotkeys.
 
-Environment overrides: `T3_STATE_DB` (DB path), `T3PET_SQLITE=child` (force the fallback poller),
-`T3PET_NODE` (path to the node binary used by the fallback).
+Overrides: `T3_STATE_DB` sets the database path, `T3PET_SQLITE=child` forces the fallback poller and
+`T3PET_NODE` points it at a specific node binary.
+
+## Hotkeys
+
+These force a mood, which is handy for recording a demo.
+
+| Keys | Mood |
+|---|---|
+| Ctrl+Alt+1 | idle |
+| Ctrl+Alt+2 | working |
+| Ctrl+Alt+3 | waiting on you |
+| Ctrl+Alt+4 | done (about 6 seconds) |
+| Ctrl+Alt+5 | error (about 6 seconds) |
+| Ctrl+Alt+0 | back to live T3 status |
+
+## Scripts
+
+- `scripts/peek-status.mjs` prints the status the pet would show right now, from your real T3 database.
+- `scripts/make-sheet.mjs` regenerates `assets/animations.png`.
+- `scripts/demo-drive.js` drives the `preview.html` playground for screen recordings (it made the GIF above).
+- `scripts/start.js` is what `npm start` runs. It clears `ELECTRON_RUN_AS_NODE` first, because terminals
+  opened from T3 Code set it and Electron would otherwise start as plain Node.
+
+## License
+
+MIT
