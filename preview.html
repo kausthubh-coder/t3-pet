@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>T3 Pet Preview</title>
+<style>
+  :root { --bg: #1d1c24; --card: #2a2933; --ink: #ecebf3; --muted: #9b99ad; --line: #3a3946; }
+  body.light { --bg: #e9e8f0; --card: #ffffff; --ink: #1e1d26; --muted: #6a687c; --line: #d4d3de; }
+  body.wall { --bg: linear-gradient(135deg, #3c6ea8, #8b5fbf 55%, #e48a6d); --card: rgba(255,255,255,.14); --ink: #fff; --muted: #f0eaff; --line: rgba(255,255,255,.25); }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 20px 16px 40px; background: var(--bg); color: var(--ink);
+    font: 14px/1.4 ui-monospace, "Cascadia Mono", Consolas, monospace; min-height: 100vh; }
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 18px; }
+  h1 { font-size: 18px; margin: 0 12px 0 0; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 26px 0 10px; }
+  button { font: inherit; background: var(--card); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+  button.on { outline: 2px solid #4f7dff; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px; display: flex; flex-direction: column; align-items: center; }
+  .card span { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  canvas { image-rendering: pixelated; image-rendering: crisp-edges; display: block; }
+  .strip { display: flex; flex-wrap: wrap; gap: 6px; }
+  .strip canvas { background: var(--card); border: 1px solid var(--line); border-radius: 6px; }
+  .bubbles { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; }
+  .bubbles .card { padding: 12px; }
+  #play { position: relative; height: 360px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--card); cursor: crosshair; }
+  #play .hint { position: absolute; left: 12px; top: 10px; color: var(--muted); font-size: 12px; pointer-events: none; }
+  #play.hover { cursor: grab; }
+  #play.drag { cursor: grabbing; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>T3 pet preview</h1>
+  <div class="row">
+    <span>background</span>
+    <button data-bg="">dark</button><button data-bg="light">light</button><button data-bg="wall">wallpaper</button>
+  </div>
+  <div class="row"><span>scale</span><button data-scale="3">3x</button><button data-scale="4">4x</button><button data-scale="6">6x</button></div>
+</header>
+
+<h2>Animations</h2>
+<div class="grid" id="anims"></div>
+
+<h2>Speech bubbles</h2>
+<div class="bubbles" id="bubbles"></div>
+
+<h2>Frames (sprite sheet, 0.1 s apart)</h2>
+<div id="sheets"></div>
+
+<h2>Playground: the real overlay behaviour (move the mouse, click or drag the pet)</h2>
+<div class="row" id="stateBtns"></div>
+<div id="play"><div class="hint">cursor = your mouse · click = pet · drag = pick up</div></div>
+
+<script src="src/shared/sprite.js"></script>
+<script src="src/shared/anims.js"></script>
+<script src="src/renderer/pet.js"></script>
+<script>
+(() => {
+  const S = window.T3Sprite, A = window.T3Anims;
+  const params = new URLSearchParams(location.search);
+  const frozen = params.has('t') ? parseFloat(params.get('t')) : null;
+  let scale = parseInt(params.get('scale') || '4', 10);
+  document.body.className = params.get('bg') || '';
+
+  const W = 64, H = 80, AX = 31, AY = 76; // art canvas + anchor (feet ground line)
+  const CTX = { look: { x: 0, y: 0 }, facing: 1, swing: 0.6 };
+
+  function drawFrame(ctx, buf, name, t, ctxExtra) {
+    buf.clear();
+    const f = A.frame(name, t, Object.assign({}, CTX, ctxExtra));
+    const lift = Math.round(f.offsetY);
+    S.drawShadow(buf, AX + 0.5, AY - 1.5, 30, lift);
+    const info = S.drawPet(buf, f.pose, AX, AY - lift);
+    S.drawFx(buf, f.fx, Object.assign(info, { ground: AY - lift }));
+    buf.toCanvas(ctx);
+  }
+
+  const cards = [
+    ['idle'], ['walk'], ['run'], ['sleep'], ['working'], ['waiting'], ['done'], ['error'],
+    ['picked'], ['fall'], ['land'], ['petted'], ['wake'],
+  ];
+  const loopLen = { done: 4, land: 1.2, petted: 2.2, wake: 1.4, error: 3 };
+  const animEls = [];
+  const grid = document.getElementById('anims');
+  for (const [name] of cards) {
+    const card = document.createElement('div'); card.className = 'card';
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+    const label = document.createElement('span'); label.textContent = name;
+    card.append(cv, label); grid.append(card);
+    animEls.push({ name, cv, ctx: cv.getContext('2d'), buf: new S.Pix(W, H) });
+  }
+
+  const bubbleEls = [];
+  const bubbleDefs = [
+    ['working', null], ['waiting', null], ['done', null], ['error', null],
+    ['working', 'working: Add a T3 Code Screen Pet'], ['waiting', 'waiting on you: Fix login redirect'],
+    ['done', 'done: Refactor sqlite poller'], ['error', 'error: Migrate auth to v2'],
+  ];
+  const bubbles = document.getElementById('bubbles');
+  for (const [state, cap] of bubbleDefs) {
+    const card = document.createElement('div'); card.className = 'card';
+    const cv = document.createElement('canvas');
+    const label = document.createElement('span'); label.textContent = state + (cap ? ' + caption' : '');
+    card.append(cv, label); bubbles.append(card);
+    bubbleEls.push({ state, cap, cv, ctx: cv.getContext('2d') });
+  }
+
+  // static sprite sheets so individual frames can be inspected
+  const sheets = document.getElementById('sheets');
+  for (const name of ['idle', 'walk', 'run', 'done', 'land', 'waiting', 'error', 'petted']) {
+    const h = document.createElement('div'); h.className = 'strip'; h.style.marginBottom = '8px';
+    for (let i = 0; i < 12; i++) {
+      const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+      const t = i * 0.1;
+      drawFrame(cv.getContext('2d'), new S.Pix(W, H), name, t, { phase: t * (name === 'run' ? 3 : 1.8) });
+      cv.style.width = W * 2 + 'px'; cv.style.height = H * 2 + 'px';
+      cv.title = `${name} t=${t.toFixed(1)}`;
+      h.append(cv);
+    }
+    const lab = document.createElement('div'); lab.textContent = name; lab.style.cssText = 'color:var(--muted);font-size:12px;margin:2px 0 4px';
+    sheets.append(lab, h);
+  }
+
+  function applyScale() {
+    for (const a of animEls) { a.cv.style.width = W * scale + 'px'; a.cv.style.height = H * scale + 'px'; }
+    for (const b of bubbleEls) { b.cv.style.width = b.cv.width * scale + 'px'; b.cv.style.height = b.cv.height * scale + 'px'; }
+    document.querySelectorAll('[data-scale]').forEach((b) => b.classList.toggle('on', +b.dataset.scale === scale));
+  }
+
+  const t0 = performance.now();
+  function tick(now) {
+    const T = frozen != null ? frozen : (now - t0) / 1000;
+    for (const a of animEls) {
+      const len = loopLen[a.name];
+      const t = len ? T % len : T;
+      drawFrame(a.ctx, a.buf, a.name, t, { phase: T * (a.name === 'run' ? 3 : 1.8) });
+    }
+    for (const b of bubbleEls) {
+      const buf = S.renderBubble(b.state, T, b.cap);
+      if (b.cv.width !== buf.w || b.cv.height !== buf.h) { b.cv.width = buf.w; b.cv.height = buf.h; applyScale(); }
+      buf.toCanvas(b.ctx);
+    }
+    if (frozen == null) requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+  if (frozen != null) tick(t0);
+  applyScale();
+
+  document.querySelectorAll('[data-bg]').forEach((b) => b.onclick = () => { document.body.className = b.dataset.bg; });
+  document.querySelectorAll('[data-scale]').forEach((b) => b.onclick = () => { scale = +b.dataset.scale; applyScale(); });
+
+  // ---- playground: the same PetController the Electron overlay uses -----------------------
+  const play = document.getElementById('play');
+  if (window.PetController) {
+    const pet = new window.PetController(play, {
+      setClickable(on) { play.classList.toggle('hover', on); },
+      setAsleep() {},
+      scale: () => 3,
+    });
+    const resize = () => pet.setBounds(play.clientWidth, play.clientHeight, 'init');
+    resize(); window.addEventListener('resize', resize);
+    play.addEventListener('mousemove', (e) => {
+      const r = play.getBoundingClientRect();
+      pet.pointer(e.clientX - r.left, e.clientY - r.top);
+    });
+    play.addEventListener('mousedown', (e) => { if (pet.pointerDown()) { play.classList.add('drag'); e.preventDefault(); } });
+    window.addEventListener('mouseup', () => { pet.pointerUp(); play.classList.remove('drag'); });
+    const titles = { working: 'Add a T3 Code Screen Pet', waiting: 'Fix login redirect', done: 'Refactor sqlite poller', error: 'Migrate auth to v2' };
+    const btns = document.getElementById('stateBtns');
+    for (const st of ['idle', 'working', 'waiting', 'done', 'error']) {
+      const b = document.createElement('button'); b.textContent = st;
+      b.onclick = () => pet.setStatus({ state: st, title: titles[st] || '', key: st + Date.now() });
+      btns.append(b);
+    }
+    const sl = document.createElement('button'); sl.textContent = 'sleep now'; sl.onclick = () => pet.sleepNow(); btns.append(sl);
+  }
+})();
+</script>
+</body>
+</html>
