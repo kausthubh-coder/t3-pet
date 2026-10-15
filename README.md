@@ -25,6 +25,9 @@ bubbles, frame strips, and a playground that runs the real overlay behaviour ins
   wakes it.
 - Hover over the pet and that spot becomes clickable. Click it for hearts, or drag it and let go to watch it
   fall and land.
+- He can get hurt. Throw him hard into a screen edge, or drop him from high up, and he goes "OW!", sees stars
+  and wears a bandage for 20 s, sulking for the first few. Click him 3 times in quick succession and he cries;
+  5 times knocks him out. A gentle click (a pet) ends the sulk.
 
 ## Hotkeys (for filming)
 

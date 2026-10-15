@@ -52,7 +52,7 @@
 
 <h2>Playground: the real overlay behaviour (move the mouse, click or drag the pet)</h2>
 <div class="row" id="stateBtns"></div>
-<div id="play"><div class="hint">cursor = your mouse · click = pet · drag = pick up</div></div>
+<div id="play"><div class="hint">cursor = your mouse · click = pet (click fast = ouch) · drag = pick up · throw hard = bonk</div></div>
 
 <script src="src/shared/sprite.js"></script>
 <script src="src/shared/anims.js"></script>
@@ -80,9 +80,9 @@
 
   const cards = [
     ['idle'], ['walk'], ['run'], ['sleep'], ['working'], ['waiting'], ['done'], ['error'],
-    ['picked'], ['fall'], ['land'], ['petted'], ['wake'],
+    ['picked'], ['fall'], ['land'], ['petted'], ['wake'], ['hurt'], ['dizzy'], ['ouch'],
   ];
-  const loopLen = { done: 4, land: 1.2, petted: 2.2, wake: 1.4, error: 3 };
+  const loopLen = { done: 4, land: 1.2, petted: 2.2, wake: 1.4, error: 3, hurt: 1.4, ouch: 1.6 };
   const animEls = [];
   const grid = document.getElementById('anims');
   for (const [name] of cards) {
@@ -110,7 +110,7 @@
 
   // static sprite sheets so individual frames can be inspected
   const sheets = document.getElementById('sheets');
-  for (const name of ['idle', 'walk', 'run', 'done', 'land', 'waiting', 'error', 'petted']) {
+  for (const name of ['idle', 'walk', 'run', 'done', 'land', 'waiting', 'error', 'petted', 'hurt', 'dizzy', 'ouch']) {
     const h = document.createElement('div'); h.className = 'strip'; h.style.marginBottom = '8px';
     for (let i = 0; i < 12; i++) {
       const cv = document.createElement('canvas'); cv.width = W; cv.height = H;

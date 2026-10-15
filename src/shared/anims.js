@@ -213,6 +213,51 @@
       };
     },
 
+    // Thrown into a wall (c.side = -1/1) or slammed into the floor (0): splat, X eyes, "OW!".
+    hurt(t, c) {
+      const side = (c && c.side) || 0;
+      const hit = t < 0.1;
+      const s = hit ? (side ? -0.14 : 0.3) : 0.26 * Math.exp(-(t - 0.1) * 8) * Math.cos((t - 0.1) * 24);
+      return {
+        pose: {
+          squash: s, bob: hit && !side ? 3 : Math.max(0, Math.round(s * 10)),
+          shakeX: hit ? -side * 2 : (Math.floor(t * 30) % 2 ? 1 : -1) * (t < 0.45 ? 1 : 0),
+          eyes: 'x', brows: 'sad', mouth: hit ? 'open' : 'wobble',
+          arms: { l: { a: 2.3, len: 10 }, r: { a: 2.3, len: 10 } },
+        },
+        fx: [{ type: 'impact', t, side }, { type: 'ow', t }].concat(t > 0.3 ? [{ type: 'stars', t }] : []),
+        fps: 60, smooth: true,
+      };
+    },
+
+    // Seeing stars after a hurt: wobbling, spiral eyes, bandage on.
+    dizzy(t) {
+      const wob = Math.sin(t * 5);
+      return {
+        pose: {
+          lean: Math.round(wob * 1.5), bob: Math.floor(t * 2.5) % 2,
+          eyes: 'spiral', mouth: 'wobble', bandage: true,
+          arms: { l: hang(0.5 + wob * 0.35), r: hang(0.5 - wob * 0.35) },
+        },
+        fx: [{ type: 'stars', t }],
+        fps: 30, smooth: true,
+      };
+    },
+
+    // Poked once too often: flinch, squint and a tear.
+    ouch(t, c) {
+      const s = 0.14 * Math.exp(-t * 6) * Math.cos(t * 30);
+      return {
+        pose: {
+          squash: s, shakeX: t < 0.3 ? (Math.floor(t * 30) % 2 ? 1 : -1) : 0,
+          eyes: 'squint', brows: 'sad', mouth: 'wobble', bandage: c && c.bandage,
+          arms: { l: { a: 2.0, len: 9 }, r: { a: 2.0, len: 9 } },
+        },
+        fx: [{ type: 'ow', t, text: 'OW' }, { type: 'tear', t }],
+        fps: 30, smooth: true,
+      };
+    },
+
     wake(t, c) {
       const h = hop(t, 0.3, 4);
       return {
@@ -227,7 +272,7 @@
     },
   };
 
-  const DURATION = { petted: 1.6, land: 0.5, wake: 0.7 };
+  const DURATION = { petted: 1.6, land: 0.5, wake: 0.7, hurt: 0.7, dizzy: 2.8, ouch: 1.0 };
 
   function frame(name, t, ctx) {
     const fn = ANIMS[name] || ANIMS.idle;

@@ -52,6 +52,9 @@
     dust: rgba('#eceaf2'),
     dustEdge: rgba('#a3a1b6'),
     alert: rgba('#ff6a3d'),
+    band: rgba('#f3c995'),
+    bandDark: rgba('#c9925b'),
+    impact: rgba('#fff6d6'),
     white: rgba('#ffffff'),
     bubbleShade: rgba('#dedde8'),
   };
@@ -242,7 +245,7 @@
 
   // Pose fields (all optional):
   //   bob (int, body sinks px), squash (+ = wider/flatter), sit, facing (-1/0/1), lean (px),
-  //   shakeX, look {x,y} in -1..1, eyes: open|blink|closed|happy|wide|squint,
+  //   shakeX, look {x,y} in -1..1, eyes: open|blink|closed|happy|wide|squint|x|spiral, bandage,
   //   brows: null|sad|focus|up, mouth: smile|grin|open|frown|o|flat|wobble, blush,
   //   arms {l:{a,len,front}, r:{...}} (a = radians outward from hanging straight down),
   //   legs {mode: stand|walk|dangle|sit, phase, lift, swing}, prop: null|laptop, typing (0/1)
@@ -305,6 +308,7 @@
       buf.rect(Math.round(fx + eyeDX), eyeY + 5, 3, 1, P.blush);
     }
     drawMouth(buf, Math.round(fx - 0.5), Math.round(cy + ry * 0.42), p.mouth || 'smile');
+    if (p.bandage) drawBandage(buf, Math.round(fx + 9), Math.round(cy - ry * 0.36)); // side of the head, clear of "T3"
 
     // front arms + prop
     const front = new Mask(W, H);
@@ -382,6 +386,12 @@
       case 'squint': // > <
         buf.pattern(x, y, side < 0 ? ['#...', '.##.', '#...'] : ['...#', '.##.', '...#'], { '#': D });
         break;
+      case 'x': // knocked out
+        buf.pattern(x, y, ['#..#', '.##.', '.##.', '#..#'], { '#': D });
+        break;
+      case 'spiral': // dizzy; mirrored so the swirls face each other
+        buf.pattern(x, y, ['####', '...#', '.#.#', '.###'], { '#': D }, side < 0);
+        break;
       case 'wide': {
         buf.pattern(x, y, ['.aa.', 'awwa', 'awwa', '.aa.'], { a: P.irisDark, w: P.sclera });
         buf.set(x + 1 + (lx > 0 ? 1 : 0), y + 1 + (ly > 0 ? 1 : 0), P.pupil);
@@ -424,6 +434,15 @@
     buf.pattern(x - Math.floor(rows[0].length / 2), y, rows, M);
   }
 
+  // Crossed sticking plaster on the forehead, centred on (cx, cy).
+  function drawBandage(buf, cx, cy) {
+    const rows = ['bb...bb', 'bbb.bbb', '.bbbbb.', '..bdb..', '.bbbbb.', 'bbb.bbb', 'bb...bb'];
+    const x = cx - 3, y = cy - 3;
+    const m = new Mask(buf.w, buf.h);
+    m.pattern(x, y, rows);
+    m.paint(buf, (px, py) => (rows[py - y][px - x] === 'd' ? P.bandDark : P.band), P.bandDark);
+  }
+
   function drawLaptop(buf, cx, ay, glow) {
     // Lid seen from behind, resting on the lap; the screen glows onto the pet.
     const w = 15, h = 9;
@@ -445,6 +464,9 @@
     sparkS: ['.#.', '#o#', '.#.'],
     sweat: ['.#.', '.#.', '###', '#o#', '.#.'],
     bang: ['##', '##', '##', '##', '..', '##'],
+    star: ['..#..', '.###.', '#####', '.###.', '.#.#.'],
+    impact: ['...#...', '.#.#.#.', '..###..', '###o###', '..###..', '.#.#.#.', '...#...'],
+    tear: ['.#.', '###', '#o#', '.#.'],
   };
 
   function fxSprite(buf, name, x, y, fill, hi) {
@@ -525,6 +547,39 @@
           puff(buf, cx - spread, y, r);
           puff(buf, cx + spread, y, r);
           if (k < 0.6) { puff(buf, cx - spread * 0.6, y - 1.5, r * 0.7); puff(buf, cx + spread * 0.6, y - 1.5, r * 0.7); }
+          break;
+        }
+        case 'stars': {
+          // three dizzy stars circling the head
+          for (let i = 0; i < 3; i++) {
+            const a = t * 5 + i * 2.094;
+            fxSprite(buf, 'star', Math.round(cx + Math.cos(a) * 12 - 2), Math.round(top - 4 + Math.sin(a) * 3), P.spark, P.sparkHi);
+          }
+          break;
+        }
+        case 'impact': {
+          // flash where it hit: side -1/1 = a wall, 0 = the floor
+          if (t > 0.28) break;
+          const side = f.side || 0;
+          const x = side ? cx + side * 17 - 3 : cx - 3;
+          const y = side ? info.cy - 3 : info.ground - 5;
+          fxSprite(buf, 'impact', Math.round(x), Math.round(y), P.impact, P.spark);
+          break;
+        }
+        case 'ow': {
+          // "OW!" pops up over the head, outlined so it reads on any background
+          if (t > 1.1) break;
+          const text = f.text || 'OW!';
+          const x = Math.round(cx - textWidth(text) / 2 + (f.dx || 0));
+          const y = Math.round(top - 11 - Math.min(1, t / 0.1) * 3);
+          for (const [ox, oy] of [[-1, 0], [1, 0], [0, -1], [0, 1], [1, 1]]) drawText(buf, x + ox, y + oy, text, P.outline);
+          drawText(buf, x, y, text, P.alert);
+          break;
+        }
+        case 'tear': {
+          // a tear runs down from one eye and drips
+          const k = (t % 1.1) / 1.1;
+          fxSprite(buf, 'tear', Math.round(cx - 10), Math.round(info.cy + 3 + k * 9), P.sweat, P.sweatHi);
           break;
         }
         case 'runDust': {

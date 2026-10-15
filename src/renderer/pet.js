@@ -19,6 +19,11 @@
     sleepAfter: 30000, // ms without cursor movement
     captionMs: 4500,
     footPad: 2,
+    hurtFloorSpeed: 1250, // landing faster than this (px/s at 3x) hurts: a drop from ~1/3 of a 1080p screen
+    hurtWallSpeed: 650, // hitting a screen edge faster than this hurts
+    pokeWindow: 1200, // ms; 3 clicks inside it make him cry, 5 knock him out
+    bandageMs: 20000,
+    grumpyMs: 7000,
   };
 
   const LABEL = { working: 'working', waiting: 'waiting on you', done: 'done', error: 'error' };
@@ -59,7 +64,8 @@
       this.captionUntil = 0;
       this.paused = false;
       this.asleep = false; this.sleepSince = 0;
-      this.timers = { land: Infinity, wake: Infinity, petted: Infinity, drag: 0, fall: 0 };
+      this.timers = { land: Infinity, wake: Infinity, petted: Infinity, hurt: Infinity, ouch: Infinity, drag: 0, fall: 0 };
+      this.hurtSide = 0; this.hurtAt = -Infinity; this.grumpyUntil = 0; this.pokes = [];
       this.facing = 0; this.faceHold = 0; this.phase = 0;
       this.chasing = false; this.running = false;
       this.hover = false; this.drag = null;
@@ -120,7 +126,7 @@
       if (!d.moved && quick) {
         this.mode = d.palt > 1 ? 'fall' : 'ground';
         this.x = d.px; this.alt = d.palt; this.vy = 0;
-        this.pet();
+        this.poke();
       } else {
         this.mode = 'fall'; this.timers.fall = 0;
         this.vx = clamp(d.vx * 0.6, -1400, 1400);
@@ -147,6 +153,27 @@
 
     pet() {
       this.timers.petted = 0;
+      this.grumpyUntil = 0; // a pet ends the sulk; the bandage stays
+      if (this.asleep) this.wakeUp(false);
+      this.kick();
+    }
+
+    // A click: gentle ones are pets; too many in a row make him cry, then knock him out.
+    poke() {
+      const now = performance.now();
+      this.pokes = this.pokes.filter((t) => now - t < CFG.pokeWindow);
+      this.pokes.push(now);
+      if (this.pokes.length >= 5) { this.pokes = []; this.bonk(0); }
+      else if (this.pokes.length >= 3) { this.timers.ouch = 0; this.timers.petted = Infinity; this.wakeUp(false); this.kick(); }
+      else this.pet();
+    }
+
+    // Hit something hard: side -1/1 = a screen edge, 0 = the floor (or poked senseless).
+    bonk(side) {
+      const T = this.timers;
+      T.hurt = 0; T.ouch = Infinity; T.petted = Infinity; T.land = Infinity;
+      this.hurtSide = side; this.hurtAt = performance.now();
+      this.grumpyUntil = this.hurtAt + CFG.grumpyMs;
       if (this.asleep) this.wakeUp(false);
       this.kick();
     }
@@ -208,13 +235,14 @@
     busyAnim() {
       const t = this.timers;
       if (t.land < A.DURATION.land || t.wake < A.DURATION.wake || t.petted < A.DURATION.petted) return true;
+      if (t.hurt < A.DURATION.hurt + A.DURATION.dizzy || t.ouch < A.DURATION.ouch) return true;
       if (this.status.state === 'done' && (performance.now() - this.status.since) / 1000 < 1.2) return true;
       return false;
     }
 
     update(dt, now) {
       const T = this.timers;
-      for (const k of ['land', 'wake', 'petted', 'drag', 'fall']) T[k] += dt;
+      for (const k of ['land', 'wake', 'petted', 'hurt', 'ouch', 'drag', 'fall']) T[k] += dt;
       const u = this.u(), k = u / 3;
       const ground = this.groundY();
       const c = this.cursor;
@@ -238,11 +266,18 @@
         this.alt += this.vy * dt;
         this.x += this.vx * dt;
         this.vx *= Math.exp(-dt * 0.8);
-        if (this.x < 20 * k) { this.x = 20 * k; this.vx = Math.abs(this.vx) * 0.5; }
-        if (this.x > this.w - 20 * k) { this.x = this.w - 20 * k; this.vx = -Math.abs(this.vx) * 0.5; }
+        for (const side of [-1, 1]) {
+          const edge = side < 0 ? 20 * k : this.w - 20 * k;
+          if (side * (this.x - edge) <= 0) continue;
+          if (Math.abs(this.vx) > CFG.hurtWallSpeed * k && T.hurt > 0.5) this.bonk(side);
+          this.x = edge; this.vx = -side * Math.abs(this.vx) * 0.5;
+        }
         if (this.alt <= 0) {
+          const impact = -this.vy;
           this.alt = 0; this.vy = 0; this.vx *= 0.25;
-          this.mode = 'ground'; T.land = 0;
+          this.mode = 'ground';
+          if (impact > CFG.hurtFloorSpeed * k && T.hurt > 0.5) this.bonk(0);
+          else if (T.hurt > A.DURATION.hurt) T.land = 0;
         }
         return;
       }
@@ -294,7 +329,10 @@
       } : { x: 0, y: 0 };
       const ctx = { look, facing: this.facing, phase: this.phase, seed: this.seed };
       if (this.mode === 'drag') return ['picked', T.drag, Object.assign(ctx, { swing: this.drag ? this.drag.swing : 0 })];
+      if (T.hurt < A.DURATION.hurt) return ['hurt', T.hurt, Object.assign(ctx, { side: this.hurtSide })];
       if (this.mode === 'fall') return ['fall', T.fall, ctx];
+      if (T.hurt < A.DURATION.hurt + A.DURATION.dizzy) return ['dizzy', T.hurt - A.DURATION.hurt, ctx];
+      if (T.ouch < A.DURATION.ouch) return ['ouch', T.ouch, ctx];
       if (T.land < A.DURATION.land) return ['land', T.land, ctx];
       if (T.wake < A.DURATION.wake) return ['wake', T.wake, ctx];
       if (T.petted < A.DURATION.petted) return ['petted', T.petted, ctx];
@@ -314,6 +352,10 @@
       const u = this.u();
       const [name, t, ctx] = this.pickAnim(now);
       const f = A.frame(name, t, ctx);
+      // after a hurt: bandage for a while, and a sulky face when he's just standing around
+      const since = now - this.hurtAt;
+      if (since < CFG.bandageMs) f.pose.bandage = true;
+      if (now < this.grumpyUntil && name === 'idle') { f.pose.brows = 'focus'; f.pose.mouth = 'frown'; }
       this.frame = f;
       const sit = !!f.pose.sit;
 
