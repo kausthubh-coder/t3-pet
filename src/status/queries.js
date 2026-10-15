@@ -12,7 +12,11 @@ const SQL = {
     WHERE r.status = 'running' AND (${LIVE}) ORDER BY r.requested_at DESC`,
   pending: `SELECT q.thread_id, q.created_at, t.title FROM orchestration_v2_projection_runtime_requests q
     LEFT JOIN orchestration_v2_projection_threads t ON t.thread_id = q.thread_id
-    WHERE q.status = 'pending' AND (${LIVE}) ORDER BY q.created_at DESC`,
+    WHERE q.status = 'pending' AND (${LIVE})
+      -- T3 leaves orphaned 'pending' rows on threads whose run already ended; only a live run can wait on you.
+      AND EXISTS (SELECT 1 FROM orchestration_v2_projection_runs r
+        WHERE r.thread_id = q.thread_id AND r.status = 'running')
+    ORDER BY q.created_at DESC`,
   finished: `SELECT r.run_id, r.thread_id, r.status, r.completed_at, t.title FROM orchestration_v2_projection_runs r
     LEFT JOIN orchestration_v2_projection_threads t ON t.thread_id = r.thread_id
     WHERE r.status IN ('completed', 'failed') AND r.completed_at IS NOT NULL

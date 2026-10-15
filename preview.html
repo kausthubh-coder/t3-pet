@@ -160,6 +160,7 @@
       setAsleep() {},
       scale: () => 3,
     });
+    window.__pet = pet; // handle for scripted demo recordings
     const resize = () => pet.setBounds(play.clientWidth, play.clientHeight, 'init');
     resize(); window.addEventListener('resize', resize);
     play.addEventListener('mousemove', (e) => {
